@@ -12,8 +12,7 @@ from Crypto.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Crypto.Signature import PKCS1_v1_5 as Signature_pkcs1_v1_5
 
 class GlobalData():
-    accumulator_file = '.usagecfg'
-    ward_target = 'certi.box'
+    accumulator_file = 'usagecfg'
     factory_log = 'factory.log'
     exit_flag = False
     app_release_flag = False
@@ -26,20 +25,17 @@ class GlobalData():
 
     @staticmethod
     def env_init():
+        if GlobalData.app_release_flag is True:
+            logging.basicConfig(filename=GlobalData.factory_log, level=logging.ERROR)
+        else:
+            logging.basicConfig(level=logging.DEBUG)
         if GlobalData.mainproc_threads_mutex is None:
             GlobalData.mainproc_threads_mutex = threading.Lock()
         is_exist = os.path.exists(GlobalData.dual_notes)
         if is_exist is False:
             with open(GlobalData.dual_notes,'w+') as dual_fs:
                 dual_fs.write(' ')
-                dual_fs.close()
-
-    @staticmethod
-    def logging_basic_cfg_setup():
-        if GlobalData.app_release_flag is True:
-            logging.basicConfig(filename=GlobalData.factory_log, level=logging.ERROR)
-        else:
-            logging.basicConfig(level=logging.DEBUG)
+                dual_fs.close()        
 
 
 class WardThread(threading.Thread):
@@ -47,14 +43,16 @@ class WardThread(threading.Thread):
         threading.Thread.__init__(self)
         
     def run(self):
-        certi_exist = os.path.exists(GlobalData.ward_target)
+        certi_exist = os.path.exists(GlobalData.accumulator_file)
         while certi_exist is True:
-            certi_exist = os.path.exists(GlobalData.ward_target)
+            certi_exist = os.path.exists(GlobalData.accumulator_file)
             if certi_exist is False:
                 GlobalData.mainproc_threads_mutex.acquire()
-                GlobalData.exit_flag = False
+                GlobalData.exit_flag = True
                 GlobalData.mainproc_threads_mutex.release()
             time.sleep(0.2)
+            if GlobalData.exit_flag is True:
+                break
             logging.debug('loop for Ward...')
 
         logging.debug('WardThread exit~')
@@ -96,10 +94,10 @@ class Accumulator():
         cipher = Cipher_pkcs1_v1_5.new(self.priv_key)
         test_text = self.unpad(cipher.decrypt(orien_text,"ERROR"))
         dldtimes = int(test_text)
-        if dldtimes > 34:
-            return
+        print '========================%d====================='%dldtimes
+        if dldtimes > 10:
+            return 'overlap'
         dldtimes += 1
-
         pub_cipher = Cipher_pkcs1_v1_5.new(self.pub_key)
         cipher_text = pub_cipher.encrypt(self.pad(str(dldtimes).encode(encoding="utf-8")))
         cipher_file = open(GlobalData.accumulator_file,'wb')
@@ -110,6 +108,7 @@ class Accumulator():
         with open(GlobalData.dual_notes,'w+') as dual_fs:
             dual_fs.write(md5_text)
             dual_fs.close()
+        return 'go_on'
         
         # f = open(GlobalData.accumulator_file,'rb')
         # compare_val = md5.new(f.read()).hexdigest()
@@ -121,12 +120,19 @@ class Accumulator():
 if __name__ == '__main__':
     GlobalData.env_init()
     accum_obj = Accumulator()
-    accum_obj.dldtimes_add()
-    # GlobalData.logging_basic_cfg_setup()
-    # ward_ins = WardThread()
-    # ward_ins.start()
-    # ward_ins.join()
-    # print 'main over!'
+    ward_ins = WardThread()
+    ward_ins.start()
+    while True:
+        ret = accum_obj.dldtimes_add()
+        if ret != 'go_on':
+            GlobalData.mainproc_threads_mutex.acquire()
+            GlobalData.exit_flag = True
+            GlobalData.mainproc_threads_mutex.release()
+            break
+        certi_exist = os.path.exists(GlobalData.accumulator_file)
+        if certi_exist is True:
+            break
+        time.sleep(0.5)
 
-    # accum = Accumulator()
-    # accum.dldtimes_add()
+    ward_ins.join()
+    print 'main over!'
