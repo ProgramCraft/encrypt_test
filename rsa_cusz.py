@@ -10,17 +10,17 @@ from Crypto.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Crypto.Signature import PKCS1_v1_5 as Signature_pkcs1_v1_5
 
 g_hash_key = None
-g_cipher_path = 'factory_cipher.peppa'
-g_orien_bin = 'binary_file.bin'
+g_cipher_path = 'factory_cipher.bin'
+g_orien_bin = '../test_bin/1101_e.bin'
 
 def gen_custz_tool_key():
 	random_generator = Random.new().read
 	rsa = RSA.generate(2048,random_generator)
 	private_pem = rsa.exportKey()
-	with open('custz_private.pem','wb') as f:
+	with open('cust_private.pem','wb') as f:
 		f.write(private_pem)
 	public_pem = rsa.publickey().exportKey()
-	with open('custz_public.pem','wb') as f:
+	with open('cust_public.pem','wb') as f:
 		f.write(public_pem)
 	
 def gen_a_hash_key():#related with curr time and local machine name
@@ -49,11 +49,13 @@ def hash_key_load():
 	
 def generate_encrypt_bin_from_orien():
 	global g_hash_key,g_cipher_path
-	bin_file = open(g_orien_bin)
+	BS = AES.block_size
+	pad = lambda s: s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
+	bin_file = open(g_orien_bin,'rb')
 	orien_text = bin_file.read()
 	bin_file.close()
 	cipher = AES.new(g_hash_key,AES.MODE_ECB)
-	cipherText = cipher.encrypt(orien_text)
+	cipherText = cipher.encrypt(pad(orien_text))
 	#print(cipherText)
 	cipher_file = open(g_cipher_path,'wb')
 	cipher_file.write(cipherText)
@@ -62,25 +64,26 @@ def generate_encrypt_bin_from_orien():
 
 def load_encrypt_bin_then_decrypt():
 	global g_hash_key,g_cipher_path
+	unpad = lambda s: s[0:-ord(s[-1])]
 	read_file = open(g_cipher_path,'rb')
 	read_data = read_file.read()
 	read_file.close()
 	decipher = AES.new(g_hash_key,AES.MODE_ECB)
-	decipherText = decipher.decrypt(read_data).decode('utf-8')
-	print(decipherText)
+	decipherText = unpad(decipher.decrypt(read_data))	#.decode('utf-8')
+	# print(decipherText)
 
 	return decipherText
 
 def get_custz_bin_data():
 	bin_data = None
-	with open(g_orien_bin) as f:
+	with open(g_orien_bin,'rb') as f:
 		bin_data = f.read()
-	return bin_data.encode()
+	return bin_data
 
 def get_orien_bin_sign():
 	sign_data = None
 	orien_data = get_custz_bin_data()
-	with open('custz_private.pem') as f:
+	with open('cust_private.pem') as f:
 		key = f.read()
 		rsakey = RSA.importKey(key)
 		signer = Signature_pkcs1_v1_5.new(rsakey)
@@ -96,17 +99,13 @@ if __name__ == '__main__':
 	hash_key_load()
 	generate_encrypt_bin_from_orien()
 	sign_data = get_orien_bin_sign()
-	orien_data = load_encrypt_bin_then_decrypt().encode()
-	with open('custz_public.pem') as f:
+	orien_data = load_encrypt_bin_then_decrypt()
+	with open('cust_public.pem') as f:
 		key = f.read()
 		rsakey = RSA.importKey(key)
 		verifier = Signature_pkcs1_v1_5.new(rsakey)
 		digest = SHA.new()
 		digest.update(orien_data)
 		is_verify = verifier.verify(digest,sign_data)
-		if is_verify is True:
-			print(True)
-		else:
-			print(False)
-
+		print(is_verify)
 		
